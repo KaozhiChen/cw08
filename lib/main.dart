@@ -15,24 +15,27 @@ class ImageLabelingPage extends StatefulWidget {
 }
 
 class _ImageLabelingPageState extends State<ImageLabelingPage> {
-  File? _selectedImage;
-  List<ImageLabel> _labels = [];
   final ImagePicker _picker = ImagePicker();
+  List<File> _selectedImages = [];
+  Map<File, List<ImageLabel>> _imageLabels = {};
 
-  Future<void> _pickImage() async {
-    final pickedFile = await _picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile == null) {
+  Future<void> _pickImages() async {
+    final pickedFiles = await _picker.pickMultiImage();
+    if (pickedFiles == null || pickedFiles.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No image selected')),
+        const SnackBar(content: Text('No images selected')),
       );
       return;
     }
 
     setState(() {
-      _selectedImage = File(pickedFile.path);
+      _selectedImages = pickedFiles.map((file) => File(file.path)).toList();
+      _imageLabels.clear();
     });
 
-    await _labelImage(File(pickedFile.path));
+    for (var image in _selectedImages) {
+      await _labelImage(image);
+    }
   }
 
   Future<void> _labelImage(File image) async {
@@ -41,10 +44,9 @@ class _ImageLabelingPageState extends State<ImageLabelingPage> {
     final imageLabeler = ImageLabeler(options: options);
 
     try {
-      final List<ImageLabel> labels =
-          await imageLabeler.processImage(inputImage);
+      final labels = await imageLabeler.processImage(inputImage);
       setState(() {
-        _labels = labels;
+        _imageLabels[image] = labels;
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -59,35 +61,41 @@ class _ImageLabelingPageState extends State<ImageLabelingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Image Labeling')),
-      body: Column(
-        children: [
-          ElevatedButton(
-            onPressed: _pickImage,
-            child: const Text('Select Image'),
-          ),
-          _selectedImage != null
-              ? Image.file(_selectedImage!)
-              : Container(
-                  height: 200,
-                  width: double.infinity,
-                  color: Colors.grey[300],
-                  child: const Center(child: Text('No image selected')),
-                ),
-          Expanded(
-            child: ListView.builder(
-              itemCount: _labels.length,
-              itemBuilder: (context, index) {
-                final label = _labels[index];
-                return ListTile(
-                  title: Text(label.label),
-                  subtitle: Text(
-                    'Confidence: ${(label.confidence * 100).toStringAsFixed(2)}%',
-                  ),
-                );
-              },
+      body: Padding(
+        padding: const EdgeInsets.all(8.0),
+        child: Column(
+          children: [
+            ElevatedButton(
+              onPressed: _pickImages,
+              child: const Text('Select Images'),
             ),
-          ),
-        ],
+            Expanded(
+              child: ListView.builder(
+                itemCount: _selectedImages.length,
+                itemBuilder: (context, index) {
+                  final image = _selectedImages[index];
+                  final labels = _imageLabels[image] ?? [];
+                  return Card(
+                    margin: const EdgeInsets.all(8.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Image.file(image, height: 200, fit: BoxFit.cover),
+                        ...labels.map((label) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8.0),
+                              child: Text(
+                                '${label.label} (${(label.confidence * 100).toStringAsFixed(2)}%)',
+                              ),
+                            )),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
